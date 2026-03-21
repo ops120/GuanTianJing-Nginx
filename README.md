@@ -324,7 +324,6 @@ open index.html
 如有问题或建议，请通过以下方式联系：
 
 - 提交 Issue: [https://github.com/ops120/GuanTianJing-Nginx/issues](https://github.com/ops120/GuanTianJing-Nginx/issues)
-- 发送邮件: ops120@example.com
 
 ---
 
