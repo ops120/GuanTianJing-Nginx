@@ -317,13 +317,14 @@ open index.html
 
 - 感谢所有贡献者和用户的支持
 - 感谢 Nginx 官方文档提供的参考
+- 感谢 [B站作者](https://space.bilibili.com/97727630) 的灵感与支持
 
 ## 📧 联系方式
 
 如有问题或建议，请通过以下方式联系：
 
-- 提交 Issue: [https://github.com/yourusername/GuanTianJing-Nginx/issues](https://github.com/yourusername/GuanTianJing-Nginx/issues)
-- 发送邮件: your.email@example.com
+- 提交 Issue: [https://github.com/ops120/GuanTianJing-Nginx/issues](https://github.com/ops120/GuanTianJing-Nginx/issues)
+- 发送邮件: ops120@example.com
 
 ---
 
