@@ -1,0 +1,1592 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nginx Topology Generator | 多文件拓扑分析</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #12121a;
+            --bg-tertiary: #1a1a25;
+            --bg-card: #15151f;
+            --border-color: #2a2a3a;
+            --border-glow: #3d3d5c;
+            --text-primary: #e8e8f0;
+            --text-secondary: #8888a0;
+            --text-muted: #5a5a70;
+            --accent-cyan: #00d4ff;
+            --accent-cyan-dim: #00a8cc;
+            --accent-magenta: #ff00aa;
+            --accent-purple: #8b5cf6;
+            --accent-green: #00ff88;
+            --accent-orange: #ff8800;
+            --accent-yellow: #ffdd00;
+            --gradient-cyber: linear-gradient(135deg, var(--accent-cyan) 0%, var(--accent-purple) 100%);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Space Grotesk', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .bg-grid {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-image: linear-gradient(rgba(0, 212, 255, 0.03) 1px, transparent 1px),
+                              linear-gradient(90deg, rgba(0, 212, 255, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px; pointer-events: none; z-index: 0;
+        }
+
+        .bg-glow { position: fixed; width: 600px; height: 600px; border-radius: 50%; filter: blur(150px); opacity: 0.12; pointer-events: none; z-index: 0; }
+        .bg-glow-1 { top: -200px; right: -100px; background: var(--accent-cyan); animation: float 20s ease-in-out infinite; }
+        .bg-glow-2 { bottom: -200px; left: -100px; background: var(--accent-magenta); animation: float 25s ease-in-out infinite reverse; }
+
+        @keyframes float { 0%, 100% { transform: translate(0, 0); } 50% { transform: translate(50px, 50px); } }
+
+        /* Header */
+        .header {
+            position: relative; z-index: 10; padding: 1.5rem 2rem;
+            display: flex; align-items: center; justify-content: space-between;
+            border-bottom: 1px solid var(--border-color); background: rgba(10, 10, 15, 0.9); backdrop-filter: blur(20px);
+        }
+
+        .logo { display: flex; align-items: center; gap: 1rem; }
+        .logo-icon { width: 40px; height: 40px; }
+        .logo-text { font-size: 1.25rem; font-weight: 700; background: var(--gradient-cyber); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+        .logo-sub { font-size: 0.7rem; color: var(--text-secondary); letter-spacing: 0.15em; text-transform: uppercase; }
+
+        .header-stats { display: flex; gap: 2rem; }
+        .stat-item { text-align: center; }
+        .stat-value { font-family: 'JetBrains Mono', monospace; font-size: 1.5rem; font-weight: 600; color: var(--accent-cyan); }
+        .stat-label { font-size: 0.65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+
+        /* Main Layout */
+        .main-container { position: relative; z-index: 10; display: grid; grid-template-columns: 350px 1fr 300px; gap: 1.5rem; padding: 1.5rem 2rem 2rem; min-height: calc(100vh - 80px); }
+
+        /* Panel */
+        .panel { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; overflow: hidden; box-shadow: 0 8px 32px rgba(0,0,0,0.4); display: flex; flex-direction: column; }
+        .panel-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between; background: var(--bg-secondary); }
+        .panel-title { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; display: flex; align-items: center; gap: 0.5rem; }
+        .panel-title::before { content: ''; width: 4px; height: 14px; background: var(--gradient-cyber); border-radius: 2px; }
+        .panel-badge { font-family: 'JetBrains Mono', monospace; font-size: 0.65rem; padding: 0.2rem 0.6rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 20px; color: var(--accent-cyan); }
+        .panel-content { flex: 1; padding: 1.25rem; overflow-y: auto; }
+        .panel-content::-webkit-scrollbar { width: 6px; }
+        .panel-content::-webkit-scrollbar-thumb { background: var(--border-glow); border-radius: 3px; }
+
+        /* Upload Zone */
+        .upload-zone { border: 2px dashed var(--border-glow); border-radius: 12px; padding: 2rem 1rem; text-align: center; transition: all 0.3s; cursor: pointer; position: relative; overflow: hidden; }
+        .upload-zone::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(0, 212, 255, 0.1), transparent); transition: left 0.5s; }
+        .upload-zone:hover::before, .upload-zone.dragover::before { left: 100%; }
+        .upload-zone:hover, .upload-zone.dragover { border-color: var(--accent-cyan); background: rgba(0, 212, 255, 0.05); }
+        .upload-icon { width: 48px; height: 48px; margin: 0 auto 0.75rem; opacity: 0.6; transition: all 0.3s; }
+        .upload-zone:hover .upload-icon { opacity: 1; transform: scale(1.1); }
+        .upload-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 0.3rem; }
+        .upload-hint { font-size: 0.7rem; color: var(--text-muted); }
+        .upload-input { display: none; }
+
+        /* File List */
+        .file-list { margin-top: 1rem; }
+        .file-list-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+        .file-list-title { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); }
+        .file-list-count { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--accent-cyan); }
+
+        .file-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 0.5rem; transition: all 0.2s; }
+        .file-item:hover { border-color: var(--border-glow); }
+        .file-item.active { border-color: var(--accent-cyan); background: rgba(0, 212, 255, 0.1); }
+
+        .file-icon { width: 28px; height: 28px; background: var(--bg-secondary); border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .file-icon svg { width: 16px; height: 16px; color: var(--accent-cyan); }
+        .file-info { flex: 1; min-width: 0; }
+        .file-name { font-size: 0.75rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .file-meta { font-size: 0.65rem; color: var(--text-muted); font-family: 'JetBrains Mono', monospace; }
+        .file-actions { display: flex; gap: 0.25rem; }
+        .file-action { width: 24px; height: 24px; background: transparent; border: none; border-radius: 4px; color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        .file-action:hover { background: var(--bg-secondary); color: var(--accent-cyan); }
+        .file-action.delete:hover { color: #ff4444; }
+        .file-action svg { width: 14px; height: 14px; }
+
+        /* Quick Actions */
+        .quick-actions { margin-top: 1rem; }
+        .action-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 0.5rem; }
+        .action-buttons { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+        .action-btn { flex: 1; min-width: 70px; padding: 0.5rem 0.75rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-secondary); font-size: 0.7rem; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 0.3rem; }
+        .action-btn:hover { background: var(--bg-secondary); border-color: var(--accent-cyan); color: var(--accent-cyan); }
+        .action-btn svg { width: 12px; height: 12px; }
+
+        /* Config Editor */
+        .config-section { margin-top: 1.25rem; }
+        .config-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+        .config-title { font-size: 0.7rem; font-weight: 600; color: var(--text-secondary); }
+        .config-editor { width: 100%; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem; font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; line-height: 1.5; color: var(--text-primary); min-height: 200px; resize: vertical; }
+        .config-editor:focus { outline: none; border-color: var(--accent-cyan); box-shadow: 0 0 0 3px rgba(0, 212, 255, 0.1); }
+        .config-editor::-webkit-scrollbar { width: 4px; }
+        .config-editor::-webkit-scrollbar-thumb { background: var(--border-glow); border-radius: 2px; }
+
+        /* Center - Topology */
+        .topology-container { flex: 1; position: relative; min-height: 500px; background: var(--bg-primary); border: 1px solid var(--border-color); border-radius: 12px; overflow: hidden; }
+        .topology-canvas { width: 100%; height: 100%; position: relative; }
+        .topology-svg { width: 100%; height: 100%; }
+
+        .empty-state { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; color: var(--text-muted); }
+        .empty-icon { width: 64px; height: 64px; margin: 0 auto 1rem; opacity: 0.3; }
+        .empty-title { font-size: 0.9rem; margin-bottom: 0.3rem; color: var(--text-secondary); }
+        .empty-hint { font-size: 0.7rem; }
+
+        .topology-controls { position: absolute; bottom: 1rem; right: 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+        .control-btn { width: 32px; height: 32px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-secondary); cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s; }
+        .control-btn:hover { background: var(--bg-tertiary); border-color: var(--accent-cyan); color: var(--accent-cyan); }
+        .control-btn svg { width: 16px; height: 16px; }
+
+        /* Topology Legend */
+        .topology-legend { position: absolute; bottom: 1rem; left: 1rem; display: flex; flex-wrap: wrap; gap: 0.75rem; padding: 0.75rem; background: rgba(21, 21, 31, 0.9); border: 1px solid var(--border-color); border-radius: 8px; }
+        .legend-item { display: flex; align-items: center; gap: 0.3rem; font-size: 0.65rem; color: var(--text-secondary); }
+        .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+        .legend-line { width: 20px; height: 2px; border-radius: 1px; }
+
+        /* Right - Analysis */
+        .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; margin-bottom: 1rem; }
+        .stat-card { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem; text-align: center; }
+        .stat-card-value { font-family: 'JetBrains Mono', monospace; font-size: 1.25rem; font-weight: 600; color: var(--text-primary); }
+        .stat-card-label { font-size: 0.6rem; color: var(--text-muted); text-transform: uppercase; }
+
+        .analysis-section { margin-bottom: 1rem; }
+        .analysis-card { background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem; margin-bottom: 0.5rem; }
+        .analysis-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; }
+        .analysis-type { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--accent-cyan); display: flex; align-items: center; gap: 0.3rem; }
+        .analysis-type::before { content: ''; width: 5px; height: 5px; background: currentColor; border-radius: 50%; animation: pulse 2s infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+        .analysis-count { font-family: 'JetBrains Mono', monospace; font-size: 0.7rem; color: var(--text-muted); }
+        .analysis-items { display: flex; flex-direction: column; gap: 0.3rem; max-height: 120px; overflow-y: auto; }
+        .analysis-item { display: flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.5rem; background: var(--bg-secondary); border-radius: 4px; font-size: 0.7rem; }
+        .item-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+        .item-dot.nginx { background: var(--accent-purple); }
+        .item-dot.upstream { background: var(--accent-cyan); }
+        .item-dot.server { background: var(--accent-magenta); }
+        .item-dot.location { background: var(--accent-green); }
+        .item-dot.proxy { background: var(--accent-orange); }
+        .item-dot.backend { background: var(--accent-yellow); }
+        .item-text { flex: 1; color: var(--text-secondary); font-family: 'JetBrains Mono', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .item-source { font-size: 0.6rem; color: var(--text-muted); padding: 0.1rem 0.3rem; background: var(--bg-tertiary); border-radius: 3px; flex-shrink: 0; }
+
+        /* Generate Button */
+        .generate-btn { width: 100%; padding: 0.9rem; background: var(--gradient-cyber); border: none; border-radius: 8px; color: var(--bg-primary); font-family: 'Space Grotesk', sans-serif; font-size: 0.85rem; font-weight: 600; cursor: pointer; transition: all 0.3s; text-transform: uppercase; letter-spacing: 0.1em; position: relative; overflow: hidden; }
+        .generate-btn::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent); transition: left 0.5s; }
+        .generate-btn:hover::before { left: 100%; }
+        .generate-btn:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0, 212, 255, 0.3); }
+        .generate-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        /* Merge Mode Toggle */
+        .mode-toggle { display: flex; gap: 0.5rem; margin-top: 1rem; }
+        .mode-btn { flex: 1; padding: 0.5rem; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-secondary); font-size: 0.7rem; cursor: pointer; transition: all 0.2s; }
+        .mode-btn.active { background: rgba(0, 212, 255, 0.1); border-color: var(--accent-cyan); color: var(--accent-cyan); }
+
+        /* Animations */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.4s ease forwards; }
+        @keyframes nodeAppear { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: scale(1); } }
+        .node-appear { animation: nodeAppear 0.5s ease forwards; }
+
+        /* Node Tooltip */
+        .node-tooltip { position: absolute; background: var(--bg-card); border: 1px solid var(--border-glow); border-radius: 8px; padding: 0.75rem; min-width: 180px; z-index: 100; pointer-events: none; box-shadow: 0 8px 32px rgba(0,0,0,0.5); }
+        .tooltip-header { font-size: 0.8rem; font-weight: 600; margin-bottom: 0.5rem; color: var(--accent-cyan); }
+        .tooltip-row { display: flex; justify-content: space-between; font-size: 0.7rem; margin-bottom: 0.25rem; }
+        .tooltip-label { color: var(--text-muted); }
+        .tooltip-value { color: var(--text-primary); font-family: 'JetBrains Mono', monospace; }
+
+        /* Topology Canvas Interactions */
+        .topology-canvas { cursor: grab; }
+        .topology-canvas.panning { cursor: grabbing; }
+        .topology-canvas:hover { cursor: grab; }
+        
+        /* Node Dragging */
+        .topology-node.dragging { opacity: 0.8; }
+        .topology-node:hover circle { stroke-width: 3 !important; filter: drop-shadow(0 0 8px currentColor); }
+
+        /* Layer Filter Controls */
+        .layer-controls {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            padding: 0.75rem;
+            background: rgba(21, 21, 31, 0.95);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            z-index: 10;
+        }
+        
+        .layer-controls-title {
+            font-size: 0.7rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 0.25rem;
+        }
+        
+        .layer-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.3rem;
+        }
+        
+        .layer-btn {
+            padding: 0.4rem 0.75rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            color: var(--text-secondary);
+            font-size: 0.7rem;
+            font-family: 'JetBrains Mono', monospace;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .layer-btn:hover {
+            background: var(--bg-secondary);
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+        }
+        
+        .layer-btn.active {
+            background: rgba(0, 212, 255, 0.15);
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+            font-weight: 600;
+        }
+
+        /* Flow Animation Controls */
+        .flow-control {
+            position: absolute;
+            top: 1rem;
+            right: 1rem;
+            display: flex;
+            gap: 0.5rem;
+            padding: 0.75rem;
+            background: rgba(21, 21, 31, 0.95);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            z-index: 10;
+        }
+
+        .flow-btn {
+            width: 36px;
+            height: 36px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+        }
+
+        .flow-btn:hover {
+            background: var(--bg-secondary);
+            border-color: var(--accent-green);
+            color: var(--accent-green);
+        }
+
+        .flow-btn.active {
+            background: rgba(0, 255, 136, 0.15);
+            border-color: var(--accent-green);
+            color: var(--accent-green);
+        }
+
+        .flow-btn svg {
+            width: 18px;
+            height: 18px;
+        }
+
+        /* Responsive */
+        @media (max-width: 1200px) {
+            .main-container { grid-template-columns: 1fr; }
+            .header { flex-direction: column; gap: 1rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-grid"></div>
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+
+    <header class="header">
+        <div class="logo">
+            <svg class="logo-icon" viewBox="0 0 48 48" fill="none">
+                <rect x="4" y="4" width="40" height="40" rx="8" stroke="url(#logoGrad)" stroke-width="2"/>
+                <circle cx="24" cy="24" r="8" stroke="url(#logoGrad)" stroke-width="2"/>
+                <circle cx="24" cy="24" r="3" fill="url(#logoGrad)"/>
+                <line x1="24" y1="4" x2="24" y2="12" stroke="url(#logoGrad)" stroke-width="2"/>
+                <line x1="24" y1="36" x2="24" y2="44" stroke="url(#logoGrad)" stroke-width="2"/>
+                <line x1="4" y1="24" x2="12" y2="24" stroke="url(#logoGrad)" stroke-width="2"/>
+                <line x1="36" y1="24" x2="44" y2="24" stroke="url(#logoGrad)" stroke-width="2"/>
+                <defs><linearGradient id="logoGrad" x1="0" y1="0" x2="48" y2="48"><stop offset="0%" stop-color="#00d4ff"/><stop offset="100%" stop-color="#8b5cf6"/></linearGradient></defs>
+            </svg>
+            <div>
+                <div class="logo-text">Nginx Topology</div>
+                <div class="logo-sub">Multi-Config Analyzer</div>
+            </div>
+        </div>
+        <div class="header-stats">
+            <div class="stat-item"><div class="stat-value" id="statFiles">0</div><div class="stat-label">配置文件</div></div>
+            <div class="stat-item"><div class="stat-value" id="statNodes">0</div><div class="stat-label">节点</div></div>
+            <div class="stat-item"><div class="stat-value" id="statUpstreams">0</div><div class="stat-label">上游服务</div></div>
+        </div>
+    </header>
+
+    <main class="main-container">
+        <!-- Left Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">配置文件</div>
+                <div class="panel-badge" id="fileCount">0 个</div>
+            </div>
+            <div class="panel-content">
+                <div class="upload-zone" id="uploadZone">
+                    <input type="file" class="upload-input" id="fileInput" accept=".conf,.txt,.nginx" multiple>
+                    <svg class="upload-icon" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M32 8v32M20 28l12-12 12 12" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M8 48v8a4 4 0 004 4h40a4 4 0 004-4v-8" stroke-linecap="round"/>
+                    </svg>
+                    <div class="upload-title">拖放多个配置文件</div>
+                    <div class="upload-hint">支持 .conf, .txt, .nginx 文件</div>
+                </div>
+
+                <div class="file-list">
+                    <div class="file-list-header">
+                        <div class="file-list-title">已上传</div>
+                        <div class="file-list-count" id="uploadedCount">0 个文件</div>
+                    </div>
+                    <div id="fileListContainer"></div>
+                </div>
+
+                <div class="quick-actions">
+                    <div class="action-label">快速示例</div>
+                    <div class="action-buttons">
+                        <button class="action-btn" onclick="loadDemo('simple')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6M9 12h6M9 15h4"/></svg>简单</button>
+                        <button class="action-btn" onclick="loadDemo('complex')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><circle cx="5" cy="8" r="2"/><circle cx="19" cy="8" r="2"/><circle cx="5" cy="16" r="2"/><circle cx="19" cy="16" r="2"/></svg>复杂</button>
+                        <button class="action-btn" onclick="loadDemo('microservice')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="6" height="6" rx="1"/><rect x="16" y="2" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>微服务</button>
+                    </div>
+                </div>
+
+                <div class="config-section">
+                    <div class="config-header">
+                        <div class="config-title">编辑选中配置</div>
+                    </div>
+                    <textarea class="config-editor" id="configEditor" placeholder="选择左侧文件进行编辑..."></textarea>
+                </div>
+
+                <div class="mode-toggle">
+                    <button class="mode-btn active" id="mergeModeBtn" onclick="setMode('merge')">合并视图</button>
+                    <button class="mode-btn" id="splitModeBtn" onclick="setMode('split')">分组视图</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Center Panel - Topology -->
+        <div class="panel" style="flex: 1;">
+            <div class="panel-header">
+                <div class="panel-title">网络拓扑</div>
+                <div class="panel-badge" id="topologyStatus">等待分析</div>
+            </div>
+            <div class="panel-content" style="padding: 0;">
+                <div class="topology-container" id="topologyContainer">
+                    <div class="empty-state" id="emptyState">
+                        <div class="empty-icon"><svg viewBox="0 0 80 80" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="40" cy="20" r="8"/><circle cx="15" cy="50" r="8"/><circle cx="65" cy="50" r="8"/><circle cx="25" cy="70" r="6"/><circle cx="55" cy="70" r="6"/><path d="M40 28v10M35 28l5 10 5-10M32 50l8-12 8 12M30 55l-5 8M50 55l5 8"/></svg></div>
+                        <div class="empty-title">上传多个配置文件</div>
+                        <div class="empty-hint">拖放文件或选择示例开始拓扑分析</div>
+                    </div>
+                    <div class="topology-canvas" id="topologyCanvas" style="display: none;">
+                        <svg class="topology-svg" id="topologySvg" viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet"></svg>
+                    </div>
+                    <div class="layer-controls" id="layerControls" style="display: none;">
+                        <div class="layer-controls-title">显示层级</div>
+                        <div class="layer-buttons" id="layerButtons">
+                            <button class="layer-btn active" data-layer="0" onclick="toggleLayer(0)">全部</button>
+                            <button class="layer-btn" data-layer="1" onclick="toggleLayer(1)">L1</button>
+                            <button class="layer-btn" data-layer="2" onclick="toggleLayer(2)">L2</button>
+                            <button class="layer-btn" data-layer="3" onclick="toggleLayer(3)">L3</button>
+                            <button class="layer-btn" data-layer="4" onclick="toggleLayer(4)">L4</button>
+                            <button class="layer-btn" data-layer="5" onclick="toggleLayer(5)">L5</button>
+                        </div>
+                    </div>
+                    <div class="flow-control" id="flowControl" style="display: none;">
+                        <button class="flow-btn active" id="flowBtn" onclick="toggleFlow()" title="数据流动">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="3"/>
+                                <path d="M12 3v6M12 15v6M3 12h6M15 12h6"/>
+                                <circle cx="12" cy="12" r="9" stroke-dasharray="4 2"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="topology-legend" id="topologyLegend" style="display: none;">
+                        <div class="legend-item"><div class="legend-dot" style="background: var(--accent-purple)"></div><span>Nginx</span></div>
+                        <div class="legend-item"><div class="legend-dot" style="background: var(--accent-cyan)"></div><span>Upstream</span></div>
+                        <div class="legend-item"><div class="legend-dot" style="background: var(--accent-magenta)"></div><span>Server</span></div>
+                        <div class="legend-item"><div class="legend-dot" style="background: var(--accent-orange)"></div><span>Proxy</span></div>
+                        <div class="legend-item"><div class="legend-dot" style="background: var(--accent-yellow)"></div><span>Backend</span></div>
+                    </div>
+                    <div class="topology-controls">
+                        <button class="control-btn" onclick="zoomIn()" title="放大"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M11 8v6M8 11h6"/></svg></button>
+                        <button class="control-btn" onclick="zoomOut()" title="缩小"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6"/></svg></button>
+                        <button class="control-btn" onclick="resetZoom()" title="一键复原"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5"/><circle cx="12" cy="12" r="2"/></svg></button>
+                    </div>
+                    <div id="nodeTooltip" class="node-tooltip" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Panel -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">解析结果</div>
+            </div>
+            <div class="panel-content">
+                <div class="stats-grid">
+                    <div class="stat-card"><div class="stat-card-value" id="statServers">0</div><div class="stat-card-label">Server</div></div>
+                    <div class="stat-card"><div class="stat-card-value" id="statLocations">0</div><div class="stat-card-label">Location</div></div>
+                </div>
+
+                <div class="analysis-section">
+                    <div class="analysis-card">
+                        <div class="analysis-header"><div class="analysis-type">Upstream</div><div class="analysis-count" id="upstreamCount">0 个</div></div>
+                        <div class="analysis-items" id="upstreamList"></div>
+                    </div>
+                    <div class="analysis-card">
+                        <div class="analysis-header"><div class="analysis-type">Server Block</div><div class="analysis-count" id="serverCount">0 个</div></div>
+                        <div class="analysis-items" id="serverList"></div>
+                    </div>
+                    <div class="analysis-card">
+                        <div class="analysis-header"><div class="analysis-type">Location 路由</div><div class="analysis-count" id="locationCount">0 个</div></div>
+                        <div class="analysis-items" id="locationList"></div>
+                    </div>
+                    <div class="analysis-card">
+                        <div class="analysis-header"><div class="analysis-type">Proxy 转发</div><div class="analysis-count" id="proxyCount">0 个</div></div>
+                        <div class="analysis-items" id="proxyList"></div>
+                    </div>
+                    <div class="analysis-card">
+                        <div class="analysis-header"><div class="analysis-type" style="color: var(--accent-green)">链路关系</div><div class="analysis-count" id="linkCount">0 个</div></div>
+                        <div class="analysis-items" id="linkList"></div>
+                    </div>
+                </div>
+
+                <button class="generate-btn" id="generateBtn" onclick="generateTopology()" disabled>生成拓扑图</button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // State
+        let uploadedFiles = [];
+        let selectedFileId = null;
+        let parsedData = { upstreams: [], servers: [], locations: [], proxies: [], links: [] };
+        let topologyNodes = [];
+        let topologyEdges = [];
+        let allTopologyNodes = []; // 保存所有节点（未过滤）
+        let allTopologyEdges = []; // 保存所有边（未过滤）
+        let zoomLevel = 1;
+        let viewMode = 'merge';
+        let currentLayer = 0; // 0 = 显示所有层级
+        let maxLayer = 0; // 最大层级数
+        let flowAnimationEnabled = true; // 流动动画开关
+
+        // Demo Configurations
+        const demoConfigs = {
+            simple: { name: 'simple.conf', content: `http {
+    upstream backend {
+        server 192.168.1.10:8080;
+        server 192.168.1.11:8080;
+        server 192.168.1.12:8080 backup;
+    }
+    server {
+        listen 80; server_name example.com;
+        location / { proxy_pass http://backend; }
+        location /api { proxy_pass http://backend/api; }
+        location /static { root /var/www/html; }
+    }
+}`},
+            complex: { name: 'complex.conf', content: `http {
+    upstream web_cluster { least_conn; server web01:8080 weight=5; server web02:8080 weight=3; server web03:8080 backup; }
+    upstream api_cluster { ip_hash; server api01:3000; server api02:3000; server api03:3000; }
+    upstream db_cluster { server mysql-master:5432; server mysql-slave1:5432; server mysql-slave2:5432; }
+    upstream cache_cluster { server redis01:6379; server redis02:6379; }
+    server {
+        listen 80; server_name www.example.com;
+        location / { proxy_pass http://web_cluster; }
+        location /api/v1 { proxy_pass http://api_cluster; }
+        location /admin { proxy_pass http://web_cluster/admin; auth_basic "Restricted"; }
+        location /static { alias /var/www/static; expires 30d; }
+    }
+    server { listen 80; server_name api.example.com; location / { proxy_pass http://api_cluster; } location /health { return 200 'OK'; } }
+    server { listen 8080; server_name monitoring; location /metrics { proxy_pass http://cache_cluster; } }
+}`},
+            microservice: { name: 'microservice.conf', content: `http {
+    upstream gateway { server gateway-1:9000; server gateway-2:9000; }
+    upstream user_svc { server user-1:8001; server user-2:8001; }
+    upstream order_svc { server order-1:8002; server order-2:8002; server order-3:8002; }
+    upstream payment_svc { server payment-1:8003; server payment-2:8003; }
+    upstream product_svc { server product-1:8004; server product-2:8004; }
+    upstream mysql_primary { server mysql-master:3306; }
+    upstream mysql_replica { server mysql-slave1:3306; server mysql-slave2:3306; }
+    upstream mongodb { server mongo-1:27017; server mongo-2:27017; server mongo-3:27017; }
+    upstream redis { server redis-1:6379; server redis-2:6379; server redis-3:6379; }
+    server { listen 80; server_name api.example.com;
+        location /api/users { proxy_pass http://user_svc; }
+        location /api/orders { proxy_pass http://order_svc; }
+        location /api/payments { proxy_pass http://payment_svc; }
+        location /api/products { proxy_pass http://product_svc; }
+    }
+}`}
+        };
+
+        // DOM Elements
+        const uploadZone = document.getElementById('uploadZone');
+        const fileInput = document.getElementById('fileInput');
+        const configEditor = document.getElementById('configEditor');
+
+        // File Upload Handlers
+        uploadZone.addEventListener('click', () => fileInput.click());
+        uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+        uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+        uploadZone.addEventListener('drop', (e) => { e.preventDefault(); uploadZone.classList.remove('dragover'); handleFiles(e.dataTransfer.files); });
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+        function handleFiles(files) {
+            const newFiles = Array.from(files);
+            let loadedCount = 0;
+            
+            newFiles.forEach(file => {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const fileData = { id: Date.now() + Math.random(), name: file.name, content: e.target.result };
+                    uploadedFiles.push(fileData);
+                    loadedCount++;
+                    
+                    // Only update stats and enable button after all files are loaded
+                    if (loadedCount === newFiles.length) {
+                        renderFileList();
+                        updateStats();
+                        document.getElementById('generateBtn').disabled = false;
+                        
+                        // Auto-generate topology if we have files
+                        if (uploadedFiles.length > 0) {
+                            setTimeout(() => {
+                                generateTopology();
+                            }, 100);
+                        }
+                    }
+                };
+                reader.readAsText(file);
+            });
+        }
+
+        function renderFileList() {
+            const container = document.getElementById('fileListContainer');
+            container.innerHTML = uploadedFiles.map(file => `
+                <div class="file-item ${selectedFileId === file.id ? 'active' : ''}" onclick="selectFile(${file.id})">
+                    <div class="file-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg></div>
+                    <div class="file-info">
+                        <div class="file-name">${file.name}</div>
+                        <div class="file-meta">${(file.content.length / 1024).toFixed(1)} KB</div>
+                    </div>
+                    <div class="file-actions">
+                        <button class="file-action delete" onclick="event.stopPropagation(); deleteFile(${file.id})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
+                    </div>
+                </div>
+            `).join('');
+            document.getElementById('uploadedCount').textContent = `${uploadedFiles.length} 个文件`;
+            document.getElementById('fileCount').textContent = `${uploadedFiles.length} 个`;
+        }
+
+        function selectFile(id) {
+            selectedFileId = id;
+            const file = uploadedFiles.find(f => f.id === id);
+            if (file) {
+                configEditor.value = file.content;
+                renderFileList();
+            }
+        }
+
+        function deleteFile(id) {
+            uploadedFiles = uploadedFiles.filter(f => f.id !== id);
+            if (selectedFileId === id) { selectedFileId = null; configEditor.value = ''; }
+            renderFileList();
+            updateStats();
+            document.getElementById('generateBtn').disabled = uploadedFiles.length === 0;
+        }
+
+        function updateFileContent() {
+            if (selectedFileId) {
+                const file = uploadedFiles.find(f => f.id === selectedFileId);
+                if (file) file.content = configEditor.value;
+            }
+        }
+
+        configEditor.addEventListener('input', updateFileContent);
+
+        function loadDemo(type) {
+            const demo = demoConfigs[type];
+            const fileData = { id: Date.now(), name: demo.name, content: demo.content };
+            uploadedFiles.push(fileData);
+            selectFile(fileData.id);
+            renderFileList();
+            updateStats();
+            document.getElementById('generateBtn').disabled = false;
+        }
+
+        function setMode(mode) {
+            viewMode = mode;
+            document.getElementById('mergeModeBtn').classList.toggle('active', mode === 'merge');
+            document.getElementById('splitModeBtn').classList.toggle('active', mode === 'split');
+            if (parsedData.upstreams.length > 0 || parsedData.servers.length > 0) generateTopology();
+        }
+
+        // Layer filter function
+        function toggleLayer(layer) {
+            currentLayer = layer;
+            
+            // Update button states
+            document.querySelectorAll('.layer-btn').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.layer) === layer);
+            });
+            
+            // Filter nodes and edges based on layer
+            if (layer === 0) {
+                // Show all layers
+                topologyNodes = [...allTopologyNodes];
+                topologyEdges = [...allTopologyEdges];
+            } else {
+                // Filter by layer
+                topologyNodes = allTopologyNodes.filter(node => node.layer === layer);
+                
+                // Get node IDs in the selected layer
+                const nodeIds = new Set(topologyNodes.map(n => n.id));
+                
+                // Filter edges to only include those between visible nodes
+                topologyEdges = allTopologyEdges.filter(edge => 
+                    nodeIds.has(edge.source) && nodeIds.has(edge.target)
+                );
+            }
+            
+            // Update display - skip viewBox update to prevent zoom changes
+            renderSVG(true);
+            updateStats();
+        }
+
+        // Update layer buttons visibility based on max layer
+        function updateLayerButtons() {
+            const layerButtons = document.getElementById('layerButtons');
+            const buttons = layerButtons.querySelectorAll('.layer-btn');
+            
+            // Show/hide layer buttons based on max layer
+            buttons.forEach(btn => {
+                const layer = parseInt(btn.dataset.layer);
+                if (layer > maxLayer && layer !== 0) {
+                    btn.style.display = 'none';
+                } else {
+                    btn.style.display = '';
+                }
+            });
+        }
+
+        // Toggle flow animation
+        function toggleFlow() {
+            flowAnimationEnabled = !flowAnimationEnabled;
+            const flowBtn = document.getElementById('flowBtn');
+            flowBtn.classList.toggle('active', flowAnimationEnabled);
+            
+            // Re-render to update animation state
+            renderSVG(true);
+        }
+
+        // Parser
+        function parseNginxConfig(config, source = 'default') {
+            const result = { upstreams: [], servers: [], locations: [], proxies: [], links: [] };
+            
+            // Parse upstream blocks - support optional port
+            const upstreamRegex = /upstream\s+([\w_]+)(?::(\d+))?\s*\{([^}]*)\}/g;
+            let match;
+            while ((match = upstreamRegex.exec(config)) !== null) {
+                const name = match[1];
+                const port = match[2]; // Optional port from upstream definition
+                const body = match[3];
+                const servers = [];
+                const serverRegex = /server\s+([^;]+);/g;
+                let serverMatch;
+                while ((serverMatch = serverRegex.exec(body)) !== null) {
+                    const serverAddr = serverMatch[1].trim();
+                    servers.push(serverAddr);
+                    // Extract backend server info
+                    const ipMatch = /(\d+\.\d+\.\d+\.\d+):?(\d+)?/.exec(serverAddr);
+                    if (ipMatch) {
+                        result.links.push({
+                            type: 'upstream_backend',
+                            source: `${name}${port ? ':' + port : ''}`,
+                            target: ipMatch[1],
+                            port: ipMatch[2] || port || '80',
+                            sourceFile: source
+                        });
+                    }
+                }
+                // Use name:port as the upstream identifier
+                const upstreamId = port ? `${name}:${port}` : name;
+                result.upstreams.push({ name: upstreamId, originalName: name, port, servers, source });
+            }
+            
+            // Parse server blocks - improved regex to handle various formats
+            const serverBlockRegex = /server\s*\{([\s\S]*?)(?=\n\s*server\s*\{|\n\s*upstream\s*|$)/g;
+            while ((match = serverBlockRegex.exec(config)) !== null) {
+                const body = match[1];
+                
+                // Extract listen port
+                const listenMatch = /listen\s+(\d+)/.exec(body);
+                const port = listenMatch ? listenMatch[1] : '80';
+                
+                // Extract server_name - handle comments and various formats
+                const nameMatch = /server_name\s+([^;\n]+);/.exec(body);
+                let serverName = `*:${port}`;
+                if (nameMatch) {
+                    // Clean up server_name: remove comments and trim
+                    serverName = nameMatch[1].split('#')[0].trim();
+                    if (!serverName) serverName = `*:${port}`;
+                }
+                
+                result.servers.push({ name: serverName, port, source });
+                
+                // Parse location blocks within server - more robust regex
+                const locationRegex = /location\s+([^\s{]+)\s*\{([\s\S]*?)\n\s*\}/g;
+                let locationMatch;
+                while ((locationMatch = locationRegex.exec(body)) !== null) {
+                    const path = locationMatch[1].trim();
+                    const locationBody = locationMatch[2];
+                    
+                    // Find proxy_pass - be more flexible with whitespace
+                    const proxyMatch = /proxy_pass\s+([^;]+);/.exec(locationBody);
+                    const rootMatch = /root\s+([^;]+);/.exec(locationBody);
+                    
+                    if (proxyMatch) {
+                        const proxyTarget = proxyMatch[1].trim();
+                        
+                        // Determine if proxy target is an upstream or direct IP
+                        // Support upstream with port: http://backend:8080
+                        const isUpstream = /^https?:\/\/[a-zA-Z_][\w_]*(?::\d+)?$/.test(proxyTarget);
+                        let upstreamName = null;
+                        if (isUpstream) {
+                            upstreamName = proxyTarget.replace(/^https?:\/\//, '');
+                        }
+                        
+                        // Extract IP if it's a direct IP proxy
+                        const ipMatch = /https?:\/\/(\d+\.\d+\.\d+\.\d+):?(\d+)?/.exec(proxyTarget);
+                        
+                        result.proxies.push({ 
+                            location: path, 
+                            target: proxyTarget,
+                            type: isUpstream ? 'upstream' : 'direct',
+                            upstreamName: upstreamName,
+                            targetIP: ipMatch ? ipMatch[1] : null,
+                            targetPort: ipMatch ? (ipMatch[2] || '80') : null,
+                            source 
+                        });
+                        
+                        // Create link for topology
+                        if (ipMatch) {
+                            // Direct IP proxy (Nginx to Nginx chain)
+                            result.links.push({
+                                type: 'nginx_chain',
+                                source: serverName,
+                                target: ipMatch[1],
+                                port: ipMatch[2] || '80',
+                                location: path,
+                                sourceFile: source
+                            });
+                        } else if (isUpstream) {
+                            // Upstream proxy (with optional port)
+                            result.links.push({
+                                type: 'server_to_upstream',
+                                source: serverName,
+                                target: upstreamName,
+                                location: path,
+                                sourceFile: source
+                            });
+                        }
+                    }
+                    
+                    result.locations.push({ 
+                        path, 
+                        type: proxyMatch ? 'proxy' : (rootMatch ? 'static' : 'other'), 
+                        target: proxyMatch ? proxyMatch[1].trim() : (rootMatch ? rootMatch[1].trim() : ''), 
+                        source 
+                    });
+                }
+            }
+            return result;
+        }
+
+        // Merge parsed data from multiple configs
+        function mergeParsedData() {
+            parsedData = { upstreams: [], servers: [], locations: [], proxies: [], links: [] };
+            uploadedFiles.forEach(file => {
+                const parsed = parseNginxConfig(file.content, file.name);
+                parsedData.upstreams.push(...parsed.upstreams);
+                parsedData.servers.push(...parsed.servers);
+                parsedData.locations.push(...parsed.locations);
+                parsedData.proxies.push(...parsed.proxies);
+                parsedData.links.push(...parsed.links);
+            });
+        }
+
+        function updateStats() {
+            mergeParsedData();
+            document.getElementById('statFiles').textContent = uploadedFiles.length;
+            document.getElementById('statUpstreams').textContent = parsedData.upstreams.length;
+            document.getElementById('statServers').textContent = parsedData.servers.length;
+            document.getElementById('statLocations').textContent = parsedData.locations.length;
+            document.getElementById('upstreamCount').textContent = `${parsedData.upstreams.length} 个`;
+            document.getElementById('serverCount').textContent = `${parsedData.servers.length} 个`;
+            document.getElementById('locationCount').textContent = `${parsedData.locations.length} 个`;
+            document.getElementById('proxyCount').textContent = `${parsedData.proxies.length} 个`;
+            document.getElementById('linkCount').textContent = `${parsedData.links.length} 个`;
+            renderAnalysisList('upstreamList', parsedData.upstreams.map(u => u.name), 'upstream');
+            renderAnalysisList('serverList', parsedData.servers.map(s => s.name), 'server');
+            renderAnalysisList('locationList', parsedData.locations.slice(0, 8).map(l => l.path), 'location');
+            renderAnalysisList('proxyList', parsedData.proxies.map(p => `${p.type === 'upstream' ? '↑' : '→'} ${p.target}`), 'proxy');
+            renderAnalysisList('linkList', parsedData.links.map(l => `${l.source} → ${l.target}`), 'backend');
+        }
+
+        function renderAnalysisList(elementId, items, type) {
+            const container = document.getElementById(elementId);
+            const uniqueItems = [...new Set(items)];
+            container.innerHTML = uniqueItems.slice(0, 8).map(item => `
+                <div class="analysis-item"><div class="item-dot ${type}"></div><div class="item-text">${item}</div></div>
+            `).join('');
+            if (uniqueItems.length > 8) container.innerHTML += `<div class="analysis-item"><span style="color: var(--text-muted); font-size: 0.65rem;">+${uniqueItems.length - 8} more...</span></div>`;
+        }
+
+        // Generate Topology
+        function generateTopology() {
+            mergeParsedData();
+            if (parsedData.upstreams.length === 0 && parsedData.servers.length === 0) return;
+            updateStats();
+            renderTopology();
+            document.getElementById('generateBtn').textContent = '重新生成';
+        }
+
+        function renderTopology() {
+            const canvas = document.getElementById('topologyCanvas');
+            const emptyState = document.getElementById('emptyState');
+            const legend = document.getElementById('topologyLegend');
+            const layerControls = document.getElementById('layerControls');
+            const svg = document.getElementById('topologySvg');
+            
+            if (!svg) return;
+            
+            emptyState.style.display = 'none';
+            canvas.style.display = 'block';
+            legend.style.display = 'flex';
+            layerControls.style.display = 'flex';
+            document.getElementById('flowControl').style.display = 'flex';
+            document.getElementById('topologyStatus').textContent = '已生成';
+
+            topologyNodes = [];
+            topologyEdges = [];
+
+            const centerX = 500;
+            const centerY = 350;
+
+            // Client node - Layer 0
+            topologyNodes.push({ id: 'client', label: 'Client', type: 'client', x: centerX, y: 60, layer: 0 });
+
+            // Group nodes by source file if split mode
+            if (viewMode === 'split') {
+                renderSplitTopology();
+            } else {
+                renderMergeTopology(centerX);
+            }
+
+            // Save all nodes and edges for layer filtering
+            allTopologyNodes = [...topologyNodes];
+            allTopologyEdges = [...topologyEdges];
+            
+            // Calculate max layer
+            maxLayer = Math.max(...allTopologyNodes.map(n => n.layer || 0));
+            
+            // Update layer buttons visibility
+            updateLayerButtons();
+            
+            // Reset to show all layers
+            currentLayer = 0;
+            document.querySelectorAll('.layer-btn').forEach(btn => {
+                btn.classList.toggle('active', parseInt(btn.dataset.layer) === 0);
+            });
+
+            document.getElementById('statNodes').textContent = topologyNodes.length;
+            renderSVG();
+        }
+
+        function renderMergeTopology(centerX) {
+            // Use links to build topology
+            if (parsedData.links.length > 0) {
+                renderTopologyFromLinks(centerX);
+            } else {
+                renderTopologyFromParsedData(centerX);
+            }
+        }
+
+        function renderTopologyFromLinks(centerX) {
+            // Build topology based on extracted links
+            const nodeMap = new Map();
+            const edgeList = [];
+            const serverNodes = [];
+            const upstreamNodes = [];
+            const backendNodes = [];
+            
+            // Add client node - Layer 0
+            nodeMap.set('client', { id: 'client', label: 'Client', type: 'client', x: centerX, y: 60, layer: 0 });
+            
+            // First pass: Create all nodes and categorize them
+            // Process all servers
+            parsedData.servers.forEach((server, idx) => {
+                const nodeId = `server_${server.name.replace(/[:.]/g, '_')}`;
+                if (!nodeMap.has(nodeId)) {
+                    const node = {
+                        id: nodeId,
+                        label: server.name,
+                        type: 'server',
+                        x: 0, // Will be set later
+                        y: 0,
+                        layer: 1, // Default to layer 1
+                        source: server.source
+                    };
+                    nodeMap.set(nodeId, node);
+                    serverNodes.push(node);
+                }
+            });
+            
+            // Process all upstreams - Layer 2
+            parsedData.upstreams.forEach((upstream, idx) => {
+                const displayLabel = upstream.originalName || upstream.name;
+                const nodeId = `upstream_${upstream.name.replace(/[:.]/g, '_')}`;
+                if (!nodeMap.has(nodeId)) {
+                    const node = {
+                        id: nodeId,
+                        label: `${displayLabel}${upstream.port ? ':' + upstream.port : ''}`,
+                        type: 'upstream',
+                        x: 0,
+                        y: 0,
+                        layer: 2, // Upstreams are in layer 2
+                        source: upstream.source,
+                        servers: upstream.servers
+                    };
+                    nodeMap.set(nodeId, node);
+                    upstreamNodes.push(node);
+                }
+            });
+            
+            // Process all backend IPs from links - Layer 3
+            const backendIPs = new Set();
+            parsedData.links.forEach(link => {
+                if (link.type === 'upstream_backend') {
+                    backendIPs.add(link.target);
+                }
+            });
+            
+            backendIPs.forEach((ip, idx) => {
+                const nodeId = `backend_${ip.replace(/[.]/g, '_')}`;
+                if (!nodeMap.has(nodeId)) {
+                    const node = {
+                        id: nodeId,
+                        label: ip,
+                        type: 'backend',
+                        x: 0,
+                        y: 0,
+                        layer: 3 // Backends are in layer 3
+                    };
+                    nodeMap.set(nodeId, node);
+                    backendNodes.push(node);
+                }
+            });
+            
+            // Calculate positions based on topology flow
+            // Layer 1: First level servers (directly connected to client)
+            const level1Servers = serverNodes.slice(0, Math.ceil(serverNodes.length / 2));
+            level1Servers.forEach((node, idx) => {
+                const spacing = Math.min(200, 800 / level1Servers.length);
+                const totalWidth = (level1Servers.length - 1) * spacing;
+                node.x = centerX - totalWidth / 2 + idx * spacing;
+                node.y = 150;
+                node.layer = 1;
+            });
+            
+            // Layer 2: Second level servers (nginx_chain targets) and upstream nodes
+            const level2Servers = serverNodes.slice(Math.ceil(serverNodes.length / 2));
+            const level2Items = [...level2Servers, ...upstreamNodes];
+            
+            if (level2Items.length > 0) {
+                const spacing = Math.min(180, 700 / level2Items.length);
+                const totalWidth = (level2Items.length - 1) * spacing;
+                level2Items.forEach((node, idx) => {
+                    node.x = centerX - totalWidth / 2 + idx * spacing;
+                    node.y = 280;
+                    // Servers are layer 2, upstreams are already layer 2
+                });
+            }
+            
+            // Layer 3: Backend nodes
+            if (backendNodes.length > 0) {
+                const spacing = Math.min(160, 800 / backendNodes.length);
+                const totalWidth = (backendNodes.length - 1) * spacing;
+                backendNodes.forEach((node, idx) => {
+                    node.x = centerX - totalWidth / 2 + idx * spacing;
+                    node.y = 410;
+                    node.layer = 3;
+                });
+            }
+            
+            // Create edges from links
+            parsedData.links.forEach(link => {
+                if (link.type === 'nginx_chain') {
+                    const sourceId = `server_${link.source.replace(/[:.]/g, '_')}`;
+                    const targetId = `server_${link.target.replace(/[:.]/g, '_')}`;
+                    
+                    // Create target server node if it doesn't exist - Layer 2
+                    if (!nodeMap.has(targetId)) {
+                        const targetNode = {
+                            id: targetId,
+                            label: link.target,
+                            type: 'server',
+                            x: centerX,
+                            y: 280,
+                            layer: 2, // nginx_chain targets are layer 2
+                            source: link.sourceFile
+                        };
+                        nodeMap.set(targetId, targetNode);
+                    }
+                    
+                    if (nodeMap.has(sourceId)) {
+                        edgeList.push({ source: sourceId, target: targetId, type: 'proxy' });
+                    }
+                } else if (link.type === 'server_to_upstream') {
+                    const sourceId = `server_${link.source.replace(/[:.]/g, '_')}`;
+                    const targetId = `upstream_${link.target.replace(/[:.]/g, '_')}`;
+                    
+                    if (nodeMap.has(sourceId) && nodeMap.has(targetId)) {
+                        edgeList.push({ source: sourceId, target: targetId, type: 'upstream' });
+                    }
+                } else if (link.type === 'upstream_backend') {
+                    const sourceId = `upstream_${link.source.replace(/[:.]/g, '_')}`;
+                    const targetId = `backend_${link.target.replace(/[.]/g, '_')}`;
+                    
+                    // Create target backend node if it doesn't exist - Layer 3
+                    if (!nodeMap.has(targetId)) {
+                        const targetNode = {
+                            id: targetId,
+                            label: link.target,
+                            type: 'backend',
+                            x: centerX,
+                            y: 410,
+                            layer: 3 // Upstream backends are layer 3
+                        };
+                        nodeMap.set(targetId, targetNode);
+                    }
+                    
+                    if (nodeMap.has(sourceId) && nodeMap.has(targetId)) {
+                        edgeList.push({ source: sourceId, target: targetId, type: 'upstream' });
+                    }
+                }
+            });
+            
+            // Add client to first server edge
+            const firstServer = serverNodes[0];
+            if (firstServer) {
+                edgeList.unshift({ source: 'client', target: firstServer.id, type: 'internal' });
+            }
+            
+            topologyNodes = Array.from(nodeMap.values());
+            topologyEdges = edgeList;
+        }
+
+        function renderTopologyFromParsedData(centerX) {
+            // Nginx gateway - 居中 - Layer 1
+            topologyNodes.push({ id: 'nginx', label: 'Nginx Gateway', type: 'nginx', x: centerX, y: 150, layer: 1 });
+            topologyEdges.push({ source: 'client', target: 'nginx', type: 'internal' });
+
+            // Servers - 居中排列 - Layer 2
+            const servers = [...new Map(parsedData.servers.map(s => [s.name, s])).values()];
+            const serverCount = servers.length || 1;
+            const serverSpacing = Math.min(150, 800 / serverCount);
+            const totalServerWidth = (serverCount - 1) * serverSpacing;
+            const serverStartX = centerX - totalServerWidth / 2;
+            servers.forEach((server, i) => {
+                topologyNodes.push({ id: `server_${i}`, label: server.name, type: 'server', x: serverStartX + i * serverSpacing, y: 280, layer: 2, source: server.source });
+                topologyEdges.push({ source: 'nginx', target: `server_${i}`, type: 'proxy' });
+            });
+
+            // Upstreams - 居中排列 - Layer 3
+            const upstreams = [...new Map(parsedData.upstreams.map(u => [u.name, u])).values()];
+            const upstreamCount = upstreams.length || 1;
+            const upstreamSpacing = Math.min(160, 800 / upstreamCount);
+            const totalUpstreamWidth = (upstreamCount - 1) * upstreamSpacing;
+            const upstreamStartX = centerX - totalUpstreamWidth / 2;
+            upstreams.forEach((upstream, i) => {
+                topologyNodes.push({ id: `upstream_${i}`, label: upstream.name, type: 'upstream', x: upstreamStartX + i * upstreamSpacing, y: 420, layer: 3, source: upstream.source, servers: upstream.servers });
+                const targetServerIdx = i % serverCount;
+                if (servers[targetServerIdx]) topologyEdges.push({ source: `server_${targetServerIdx}`, target: `upstream_${i}`, type: 'upstream' });
+            });
+
+            // Backends - 居中排列 - Layer 4
+            const allBackends = new Set();
+            upstreams.forEach(u => u.servers.forEach(s => allBackends.add(s.split(':')[0])));
+            const backends = Array.from(allBackends);
+            const backendCount = backends.length || 1;
+            const backendSpacing = Math.min(120, 800 / backendCount);
+            const totalBackendWidth = (backendCount - 1) * backendSpacing;
+            const backendStartX = centerX - totalBackendWidth / 2;
+            backends.forEach((backend, i) => {
+                topologyNodes.push({ id: `backend_${i}`, label: backend, type: 'backend', x: backendStartX + i * backendSpacing, y: 560, layer: 4 });
+                const targetUpstreamIdx = Math.floor(i / Math.max(1, Math.ceil(backendCount / upstreamCount)));
+                if (upstreams[targetUpstreamIdx]) topologyEdges.push({ source: `upstream_${targetUpstreamIdx}`, target: `backend_${i}`, type: 'upstream' });
+            });
+        }
+
+        function renderSplitTopology() {
+            const sources = [...new Set(uploadedFiles.map(f => f.name))];
+            const colWidth = 1000 / sources.length;
+
+            sources.forEach((source, sourceIdx) => {
+                const colCenterX = colWidth * sourceIdx + colWidth / 2;
+                const servers = parsedData.servers.filter(s => s.source === source);
+                const upstreams = parsedData.upstreams.filter(u => u.source === source);
+
+                // Nginx per file - Layer 1
+                topologyNodes.push({ id: `nginx_${sourceIdx}`, label: `Nginx ${sourceIdx + 1}`, type: 'nginx', x: colCenterX, y: 150, layer: 1, source });
+                topologyEdges.push({ source: 'client', target: `nginx_${sourceIdx}`, type: 'internal' });
+
+                // Servers - Layer 2
+                servers.forEach((server, i) => {
+                    topologyNodes.push({ id: `server_${sourceIdx}_${i}`, label: server.name, type: 'server', x: colCenterX, y: 280 + i * 60, layer: 2 });
+                    topologyEdges.push({ source: `nginx_${sourceIdx}`, target: `server_${sourceIdx}_${i}`, type: 'proxy' });
+                });
+
+                // Upstreams - Layer 3
+                upstreams.forEach((upstream, i) => {
+                    const upY = 280 + servers.length * 60 + 60 + i * 60;
+                    topologyNodes.push({ id: `upstream_${sourceIdx}_${i}`, label: upstream.name, type: 'upstream', x: colCenterX, y: upY, layer: 3, servers: upstream.servers });
+                    if (servers[0]) topologyEdges.push({ source: `server_${sourceIdx}_0`, target: `upstream_${sourceIdx}_${i}`, type: 'upstream' });
+                });
+            });
+        }
+
+        const gradientDefsHTML = `
+            <defs>
+                <linearGradient id="edgeCyan" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#00d4ff"/><stop offset="100%" stop-color="#00a8cc"/></linearGradient>
+                <linearGradient id="edgeMagenta" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#ff00aa"/><stop offset="100%" stop-color="#8b5cf6"/></linearGradient>
+                <linearGradient id="edgeGreen" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="#00ff88"/><stop offset="100%" stop-color="#00cc66"/></linearGradient>
+                <marker id="arrowCyan" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#00d4ff"/></marker>
+                <marker id="arrowMagenta" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#ff00aa"/></marker>
+                <marker id="arrowGreen" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#00ff88"/></marker>
+                <marker id="arrowCyanAnimated" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+                    <circle r="3" fill="#00ffff">
+                        <animate attributeName="opacity" values="0;1;0" dur="1s" repeatCount="indefinite"/>
+                    </circle>
+                </marker>
+                <marker id="arrowMagentaAnimated" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+                    <circle r="3" fill="#ff00ff">
+                        <animate attributeName="opacity" values="0;1;0" dur="1s" repeatCount="indefinite"/>
+                    </circle>
+                </marker>
+                <marker id="arrowGreenAnimated" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+                    <circle r="3" fill="#00ff00">
+                        <animate attributeName="opacity" values="0;1;0" dur="1s" repeatCount="indefinite"/>
+                    </circle>
+                </marker>
+            </defs>
+        `;
+
+        function renderSVG(skipViewBoxUpdate = false) {
+            const svg = document.getElementById('topologySvg');
+            const canvas = document.getElementById('topologyCanvas');
+            
+            // 获取画布实际尺寸
+            const canvasWidth = canvas.clientWidth || 1000;
+            const canvasHeight = canvas.clientHeight || 700;
+            
+            // 计算所有节点的边界框
+            if (topologyNodes.length === 0) return;
+            
+            // 只有在不是拖动节点时才重新计算 viewBox
+            if (!skipViewBoxUpdate) {
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                topologyNodes.forEach(node => {
+                    minX = Math.min(minX, node.x);
+                    maxX = Math.max(maxX, node.x);
+                    minY = Math.min(minY, node.y);
+                    maxY = Math.max(maxY, node.y);
+                });
+                
+                // 添加边界的节点大小余量
+                const margin = 100;
+                minX -= margin;
+                maxX += margin;
+                minY -= margin;
+                maxY += margin;
+                
+                // 计算实际需要的 viewBox
+                const contentWidth = maxX - minX;
+                const contentHeight = maxY - minY;
+                
+                // 计算缩放比例以适应画布
+                const scaleX = canvasWidth / contentWidth;
+                const scaleY = canvasHeight / contentHeight;
+                const autoScale = Math.min(scaleX, scaleY, 1.5); // 最大放大 1.5 倍
+                
+                // 计算 viewBox 的中心点
+                const viewBoxCenterX = (minX + maxX) / 2;
+                const viewBoxCenterY = (minY + maxY) / 2;
+                
+                // 计算 viewBox 尺寸（应用缩放）
+                const viewBoxWidth = contentWidth / autoScale;
+                const viewBoxHeight = contentHeight / autoScale;
+                
+                // 更新 viewBox 状态（重置缩放）
+                viewBoxState = {
+                    x: viewBoxCenterX - viewBoxWidth / 2,
+                    y: viewBoxCenterY - viewBoxHeight / 2,
+                    width: viewBoxWidth,
+                    height: viewBoxHeight
+                };
+                // 保存初始状态用于复原
+                initialViewBoxState = { ...viewBoxState };
+                
+                // 设置 viewBox，使内容居中
+                const viewBox = `${viewBoxState.x} ${viewBoxState.y} ${viewBoxState.width} ${viewBoxState.height}`;
+                svg.setAttribute('viewBox', viewBox);
+            }
+
+            const edgesHtml = topologyEdges.map((edge, i) => {
+                const src = topologyNodes.find(n => n.id === edge.source);
+                const tgt = topologyNodes.find(n => n.id === edge.target);
+                if (!src || !tgt) return '';
+                
+                const gradientMap = { upstream: 'url(#edgeCyan)', proxy: 'url(#edgeMagenta)', internal: 'url(#edgeGreen)' };
+                const arrowMap = { upstream: 'arrowCyan', proxy: 'arrowMagenta', internal: 'arrowGreen' };
+                const animatedArrowMap = { upstream: 'arrowCyanAnimated', proxy: 'arrowMagentaAnimated', internal: 'arrowGreenAnimated' };
+                
+                const gradientId = `flowGradient_${i}`;
+                const animateId = `flowAnimate_${i}`;
+                const particleId = `flowParticle_${i}`;
+                
+                // 计算路径长度
+                const dx = tgt.x - src.x;
+                const dy = tgt.y - src.y;
+                const length = Math.sqrt(dx * dx + dy * dy);
+                
+                // 边的颜色
+                const edgeColor = gradientMap[edge.type].includes('Cyan') ? '#00d4ff' : gradientMap[edge.type].includes('Magenta') ? '#ff00aa' : '#00ff88';
+                
+                // 生成边的基础线和动画粒子
+                let html = `
+                    <defs>
+                        <linearGradient id="${gradientId}" gradientUnits="userSpaceOnUse" x1="${src.x}" y1="${src.y}" x2="${tgt.x}" y2="${tgt.y}">
+                            <stop offset="0%" stop-color="${edgeColor}" stop-opacity="0.2"/>
+                            <stop offset="85%" stop-color="${edgeColor}" stop-opacity="0.7"/>
+                            <stop offset="100%" stop-color="${edgeColor}" stop-opacity="1"/>
+                        </linearGradient>
+                    </defs>
+                    <path d="M${src.x},${src.y} L${tgt.x},${tgt.y}" stroke="${gradientMap[edge.type]}" stroke-width="2" opacity="0.4"/>
+                `;
+                
+                // 如果启用了流动动画，添加动画粒子
+                if (flowAnimationEnabled) {
+                    html += `
+                        <circle r="5" fill="${edgeColor}" opacity="0.9">
+                            <animateMotion dur="${1.5 + i * 0.2}s" repeatCount="indefinite" rotate="auto">
+                                <mpath href="#${animateId}"/>
+                            </animateMotion>
+                            <animate attributeName="opacity" values="0.3;1;0.3" dur="1s" repeatCount="indefinite"/>
+                        </circle>
+                        <circle r="3" fill="#ffffff" opacity="0.6">
+                            <animateMotion dur="${1.5 + i * 0.2}s" repeatCount="indefinite" rotate="auto" begin="${0.3 + i * 0.1}s">
+                                <mpath href="#${animateId}"/>
+                            </animateMotion>
+                        </circle>
+                    `;
+                }
+                
+                // 隐藏的路径用于动画
+                html += `<path id="${animateId}" d="M${src.x},${src.y} L${tgt.x},${tgt.y}" fill="none" stroke="none"/>`;
+                
+                return html;
+            }).join('');
+
+            const nodesHtml = topologyNodes.map((node, i) => {
+                const colors = { client: { fill: '#1a1a25', stroke: '#ffffff', text: '#ffffff' }, nginx: { fill: '#1a1a25', stroke: '#8b5cf6', text: '#8b5cf6' }, server: { fill: '#1a1a25', stroke: '#ff00aa', text: '#ff00aa' }, upstream: { fill: '#1a1a25', stroke: '#00d4ff', text: '#00d4ff' }, backend: { fill: '#1a1a25', stroke: '#ffdd00', text: '#ffdd00' } };
+                const color = colors[node.type];
+                const size = node.type === 'nginx' || node.type === 'client' ? 50 : 40;
+                return `
+                    <g class="topology-node" transform="translate(${node.x}, ${node.y})" 
+                       style="cursor: move;"
+                       onmousedown="startNodeDrag(event, '${node.id}')"
+                       onmouseenter="showTooltip(event, '${node.id}')" 
+                       onmouseleave="hideTooltip()">
+                        <circle r="${size / 2}" fill="${color.fill}" stroke="${color.stroke}" stroke-width="2" style="pointer-events: all;"/>
+                        ${getNodeIcon(node.type, size, color)}
+                        <text y="${size / 2 + 18}" class="node-label" fill="${color.text}" font-size="10" text-anchor="middle" style="pointer-events: none;">${node.label.length > 14 ? node.label.substring(0, 14) + '...' : node.label}</text>
+                    </g>
+                `;
+            }).join('');
+
+            svg.innerHTML = gradientDefsHTML + `<g>${edgesHtml}${nodesHtml}</g>`;
+        }
+
+        function getNodeIcon(type, size, color) {
+            const icons = {
+                client: `<circle r="8" fill="${color.text}" opacity="0.3"/><circle r="5" fill="${color.text}"/>`,
+                nginx: `<rect x="-12" y="-12" width="24" height="24" rx="4" fill="none" stroke="${color.text}" stroke-width="2"/><circle r="5" fill="${color.text}"/>`,
+                server: `<rect x="-14" y="-10" width="28" height="20" rx="3" fill="none" stroke="${color.text}" stroke-width="2"/><line x1="-8" y1="-4" x2="8" y2="-4" stroke="${color.text}" stroke-width="2"/><line x1="-8" y1="2" x2="4" y2="2" stroke="${color.text}" stroke-width="2"/>`,
+                upstream: `<path d="M0,-12 L10,6 L-10,6 Z" fill="none" stroke="${color.text}" stroke-width="2"/><circle r="4" fill="${color.text}"/>`,
+                backend: `<circle r="10" fill="none" stroke="${color.text}" stroke-width="2"/><circle r="4" fill="${color.text}"/>`
+            };
+            return icons[type] || icons.client;
+        }
+
+        function showTooltip(event, nodeId) {
+            const node = topologyNodes.find(n => n.id === nodeId);
+            if (!node) return;
+            const tooltip = document.getElementById('nodeTooltip');
+            let content = `<div class="tooltip-header">${node.label}</div>`;
+            content += `<div class="tooltip-row"><span class="tooltip-label">Type</span><span class="tooltip-value">${node.type}</span></div>`;
+            if (node.source) content += `<div class="tooltip-row"><span class="tooltip-label">Source</span><span class="tooltip-value">${node.source}</span></div>`;
+            if (node.servers) content += `<div class="tooltip-row"><span class="tooltip-label">Backends</span><span class="tooltip-value">${node.servers.length}</span></div>`;
+            tooltip.innerHTML = content;
+            tooltip.style.display = 'block';
+            tooltip.style.left = (event.pageX + 10) + 'px';
+            tooltip.style.top = (event.pageY + 10) + 'px';
+        }
+
+        function hideTooltip() { document.getElementById('nodeTooltip').style.display = 'none'; }
+
+        // Node Dragging
+        let isDraggingNode = false;
+        let draggedNodeId = null;
+        let dragStartPos = { x: 0, y: 0 };
+        let dragNodeStartPos = { x: 0, y: 0 };
+
+        function startNodeDrag(event, nodeId) {
+            event.preventDefault();
+            event.stopPropagation();
+            
+            isDraggingNode = true;
+            draggedNodeId = nodeId;
+            
+            const svg = document.getElementById('topologySvg');
+            const rect = svg.getBoundingClientRect();
+            
+            // Get current mouse position in screen coordinates
+            dragStartPos = {
+                x: event.clientX,
+                y: event.clientY
+            };
+            
+            // Get node current position
+            const node = topologyNodes.find(n => n.id === nodeId);
+            if (node) {
+                dragNodeStartPos = { x: node.x, y: node.y };
+            }
+            
+            // Add visual feedback
+            const nodeElement = svg.querySelector(`g[onmousedown*="${nodeId}"]`);
+            if (nodeElement) {
+                nodeElement.classList.add('dragging');
+            }
+            
+            // Add global mouse listeners
+            window.addEventListener('mousemove', onNodeDrag);
+            window.addEventListener('mouseup', stopNodeDrag);
+        }
+
+        function onNodeDrag(event) {
+            if (!isDraggingNode || !draggedNodeId) return;
+            
+            const svg = document.getElementById('topologySvg');
+            if (!svg) return;
+            
+            const rect = svg.getBoundingClientRect();
+            
+            // Calculate mouse delta in screen coordinates
+            const dx = event.clientX - dragStartPos.x;
+            const dy = event.clientY - dragStartPos.y;
+            
+            // Convert to SVG coordinates
+            const scaleX = viewBoxState.width / rect.width;
+            const scaleY = viewBoxState.height / rect.height;
+            
+            const svgDx = dx * scaleX;
+            const svgDy = dy * scaleY;
+            
+            // Update node position
+            const node = topologyNodes.find(n => n.id === draggedNodeId);
+            if (node) {
+                node.x = dragNodeStartPos.x + svgDx;
+                node.y = dragNodeStartPos.y + svgDy;
+                
+                // Re-render to update positions (edges will update automatically)
+                // Skip viewBox update to prevent zoom changes during drag
+                renderSVG(true);
+                
+                // Re-apply dragging class after re-render
+                const nodeElement = svg.querySelector(`g[onmousedown*="${draggedNodeId}"]`);
+                if (nodeElement) {
+                    nodeElement.classList.add('dragging');
+                }
+            }
+        }
+
+        function stopNodeDrag() {
+            const svg = document.getElementById('topologySvg');
+            if (svg && draggedNodeId) {
+                const nodeElement = svg.querySelector(`g[onmousedown*="${draggedNodeId}"]`);
+                if (nodeElement) {
+                    nodeElement.classList.remove('dragging');
+                }
+            }
+            
+            isDraggingNode = false;
+            draggedNodeId = null;
+            window.removeEventListener('mousemove', onNodeDrag);
+            window.removeEventListener('mouseup', stopNodeDrag);
+        }
+
+        // Pan and Zoom State
+        let isPanning = false;
+        let startPan = { x: 0, y: 0 };
+        let viewBoxState = { x: 0, y: 0, width: 1000, height: 700 };
+        let initialViewBoxState = { x: 0, y: 0, width: 1000, height: 700 };
+
+        // Initialize pan and zoom
+        function initPanAndZoom() {
+            const canvas = document.getElementById('topologyCanvas');
+            if (!canvas) return;
+
+            // Mouse down - start panning
+            canvas.addEventListener('mousedown', (e) => {
+                // Don't pan if dragging a node
+                if (isDraggingNode) return;
+                
+                if (e.button === 0) { // Left click only
+                    isPanning = true;
+                    canvas.classList.add('panning');
+                    startPan = { x: e.clientX, y: e.clientY };
+                    e.preventDefault();
+                    e.stopPropagation();
+                }
+            });
+
+            // Mouse move - panning
+            window.addEventListener('mousemove', (e) => {
+                if (!isPanning) return;
+                
+                const dx = e.clientX - startPan.x;
+                const dy = e.clientY - startPan.y;
+                
+                // Convert pixel movement to viewBox coordinates
+                const scaleX = viewBoxState.width / canvas.clientWidth;
+                const scaleY = viewBoxState.height / canvas.clientHeight;
+                
+                viewBoxState.x -= dx * scaleX;
+                viewBoxState.y -= dy * scaleY;
+                
+                startPan = { x: e.clientX, y: e.clientY };
+                
+                applyPanAndZoom();
+                e.preventDefault();
+            });
+
+            // Mouse up - stop panning
+            window.addEventListener('mouseup', () => {
+                isPanning = false;
+                canvas.classList.remove('panning');
+            });
+
+            // Mouse wheel - zoom
+            canvas.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                const delta = e.deltaY > 0 ? 1.1 : 0.9;
+                const newWidth = viewBoxState.width * delta;
+                const newHeight = viewBoxState.height * delta;
+                
+                // Zoom towards mouse position
+                const rect = canvas.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+                
+                // Calculate the point in SVG coordinates
+                const svgPointX = viewBoxState.x + (mouseX / rect.width) * viewBoxState.width;
+                const svgPointY = viewBoxState.y + (mouseY / rect.height) * viewBoxState.height;
+                
+                // Adjust viewBox to zoom towards mouse
+                viewBoxState.x = svgPointX - (mouseX / rect.width) * newWidth;
+                viewBoxState.y = svgPointY - (mouseY / rect.height) * newHeight;
+                viewBoxState.width = newWidth;
+                viewBoxState.height = newHeight;
+                
+                applyPanAndZoom();
+            }, { passive: false });
+        }
+
+        function applyPanAndZoom() {
+            const svg = document.getElementById('topologySvg');
+            if (!svg || viewBoxState.width === 0) return;
+            
+            const newViewBox = `${viewBoxState.x} ${viewBoxState.y} ${viewBoxState.width} ${viewBoxState.height}`;
+            svg.setAttribute('viewBox', newViewBox);
+        }
+
+        function zoomIn() {
+            const svg = document.getElementById('topologySvg');
+            if (!svg) return;
+            
+            const zoomFactor = 0.8;
+            viewBoxState.width *= zoomFactor;
+            viewBoxState.height *= zoomFactor;
+            viewBoxState.x += viewBoxState.width * (1 - zoomFactor) / 2;
+            viewBoxState.y += viewBoxState.height * (1 - zoomFactor) / 2;
+            applyPanAndZoom();
+        }
+
+        function zoomOut() {
+            const svg = document.getElementById('topologySvg');
+            if (!svg) return;
+            
+            const zoomFactor = 1.25;
+            viewBoxState.width *= zoomFactor;
+            viewBoxState.height *= zoomFactor;
+            viewBoxState.x -= viewBoxState.width * (zoomFactor - 1) / 2;
+            viewBoxState.y -= viewBoxState.height * (zoomFactor - 1) / 2;
+            applyPanAndZoom();
+        }
+
+        function resetZoom() {
+            viewBoxState = { ...initialViewBoxState };
+            applyPanAndZoom();
+        }
+
+        // Initialize on DOM ready
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('fileCount').textContent = '0 个';
+            initPanAndZoom();
+        });
+    </script>
+</body>
+</html>
