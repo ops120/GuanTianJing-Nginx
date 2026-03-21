@@ -317,7 +317,7 @@ open index.html
 
 - 感谢所有贡献者和用户的支持
 - 感谢 Nginx 官方文档提供的参考
-- 感谢 [B站作者](https://space.bilibili.com/97727630) 的灵感与支持
+- 感谢 [你们喜爱的老王](https://space.bilibili.com/97727630) 的灵感与支持
 
 ## 📧 联系方式
 
