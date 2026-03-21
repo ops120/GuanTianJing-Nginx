@@ -6,7 +6,7 @@
 [![Version](https://img.shields.io/badge/version-2.0.0-green.svg)](https://github.com/yourusername/GuanTianJing-Nginx/releases)
 [![Status](https://img.shields.io/badge/status-stable-brightgreen.svg)](https://github.com/yourusername/GuanTianJing-Nginx)
 
-![观天镜 Demo](https://your-demo-image-url.com)
+![观天镜拓扑图](examples/nginx_topology.svg)
 
 ## ✨ 功能特性
 
