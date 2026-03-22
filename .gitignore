@@ -22,3 +22,8 @@ logs/
 # Cache
 .cache/
 temp/
+
+# Source directory - only index.html is needed
+src/index copy.html
+src/index copy 2.html
+src/index copy 3.html
